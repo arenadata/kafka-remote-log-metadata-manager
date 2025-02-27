@@ -1,0 +1,6 @@
+rootProject.name = 'kafka-remote-log-metadata-manager'
+include 'core'
+include 'metadata-storage'
+include 'metadata-storage:core'
+include 'metadata-storage:zookeeper'
+

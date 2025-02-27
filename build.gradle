@@ -1,0 +1,212 @@
+/*
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+plugins {
+    id "java-library"
+    id "distribution"
+    id "com.diffplug.spotless" version "6.25.0"
+}
+
+allprojects {
+    repositories {
+        maven {
+            url = uri("https://oss.sonatype.org/service/local/repositories/snapshots/content")
+        }
+        mavenCentral()
+    }
+
+    // https://docs.gradle.org/current/userguide/distribution_plugin.html
+    apply plugin: "distribution"
+
+    apply plugin: "base"
+
+    ext {
+        junitVersion = "4.13.2"
+
+        junitJupiterVersion = "5.10.3"
+
+        junitPlatformVersion = "1.10.3"
+
+        slf4jVersion = "1.7.36"
+
+        kafkaVersion = "3.6.0"
+
+        assertJVersion = "3.25.3"
+
+        testcontainersVersion = "1.20.1"
+
+        zookeeperVersion = "3.8.3"
+
+        curatorVersion = "5.5.0"
+    }
+
+    tasks.distTar {
+        compression = Compression.GZIP
+        duplicatesStrategy DuplicatesStrategy.EXCLUDE
+    }
+
+    tasks.distZip {
+        duplicatesStrategy DuplicatesStrategy.EXCLUDE
+    }
+}
+
+subprojects {
+    java {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+
+        withJavadocJar()
+        withSourcesJar()
+    }
+
+    // https://docs.gradle.org/current/userguide/java_library_plugin.html
+    apply plugin: "java"
+
+    // https://docs.gradle.org/current/userguide/checkstyle_plugin.html
+    apply plugin: "checkstyle"
+
+    // https://docs.gradle.org/current/userguide/jacoco_plugin.html
+    apply plugin: "jacoco"
+
+    apply plugin: "idea"
+
+    apply plugin: "com.diffplug.spotless"
+
+    dependencies {
+        compileOnly "org.apache.kafka:kafka-clients:$kafkaVersion"
+        compileOnly "org.apache.kafka:kafka-storage-api:$kafkaVersion"
+        compileOnly "org.apache.kafka:kafka-storage:$kafkaVersion"
+
+        compileOnly "org.slf4j:slf4j-api:$slf4jVersion"
+
+        testImplementation "org.apache.kafka:kafka-clients:$kafkaVersion"
+        testImplementation "org.apache.kafka:kafka-storage-api:$kafkaVersion"
+        testImplementation "org.apache.kafka:kafka-storage:$kafkaVersion"
+
+        testImplementation "org.junit.jupiter:junit-jupiter-api:$junitJupiterVersion"
+        testImplementation "org.junit.jupiter:junit-jupiter-params:$junitJupiterVersion"
+        testImplementation "org.junit.platform:junit-platform-launcher:$junitPlatformVersion"
+        testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:$junitJupiterVersion"
+
+        testImplementation "org.assertj:assertj-core:$assertJVersion"
+
+        testRuntimeOnly "org.slf4j:slf4j-log4j12:$slf4jVersion"
+    }
+
+    checkstyle {
+        toolVersion = "10.12.0"
+        configDirectory = rootProject.file("checkstyle/")
+    }
+
+    tasks.named('test') {
+        // Use junit platform for unit tests.
+        useJUnitPlatform()
+    }
+
+    tasks.javadoc {
+        // disable missing javadoc lint and show only warning and error messages
+        options.addStringOption('Xdoclint:all,-missing', '-quiet')
+    }
+
+    distributions {
+        main {
+            contents {
+                from jar
+                from sourcesJar
+                from configurations.runtimeClasspath
+            }
+        }
+    }
+
+    spotless {
+        java {
+            importOrder('javax', 'java', 'org.apache.kafka', 'io.aiven', 'io.arenadata', '', '\\#')
+            removeUnusedImports()
+        }
+    }
+
+    sourceSets {
+        integrationTest {
+            java {
+                srcDirs = ['src/integration-test/java']
+            }
+            resources {
+                srcDirs = ['src/integration-test/resources']
+            }
+
+            compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+            runtimeClasspath += output + compileClasspath
+        }
+    }
+
+    tasks.register('integrationTest', Test) {
+        description = 'Runs the integration tests.'
+        group = 'verification'
+        testClassesDirs = sourceSets.integrationTest.output.classesDirs
+        classpath = sourceSets.integrationTest.runtimeClasspath
+
+        shouldRunAfter test, distTar
+
+        useJUnitPlatform()
+
+        // Run always.
+        outputs.upToDateWhen { false }
+    }
+
+    check.configure {
+        dependsOn tasks.named("integrationTest")
+    }
+
+    configurations {
+        integrationTestImplementation.extendsFrom testImplementation
+        integrationTestRuntime.extendsFrom testRuntimeClasspath
+    }
+
+    idea {
+        module {
+            testSourceDirs += sourceSets.integrationTest.java.srcDirs
+            testSourceDirs += sourceSets.integrationTest.resources.srcDirs
+        }
+    }
+}
+
+dependencies {
+    // needed to run demo because Kafka has no default RemoteLogStorageManager implementation
+    runtimeOnly "io.aiven:tiered-storage-for-apache-kafka-core:0.0.1-SNAPSHOT"
+    runtimeOnly "io.aiven:tiered-storage-for-apache-kafka-storage-filesystem:0.0.1-SNAPSHOT"
+}
+
+distributions {
+    main {
+        contents {
+            from(project(":core").jar)
+            from(project(":core").configurations.runtimeClasspath)
+            from(project(":metadata-storage:core").jar)
+            from(project(":metadata-storage:core").configurations.runtimeClasspath)
+            from(project(":metadata-storage:zookeeper").jar)
+            from(project(":metadata-storage:zookeeper").configurations.runtimeClasspath)
+        }
+    }
+
+    tieredStorage {
+        distributionBaseName = "aiven-local-storage-backend"
+        contents {
+            from(project.configurations.runtimeClasspath)
+        }
+    }
+}
+
+tasks.named("tieredStorageDistTar") {
+    compression = Compression.GZIP
+}
