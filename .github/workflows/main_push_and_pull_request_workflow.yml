@@ -1,0 +1,33 @@
+# The workflow to check main after push.
+name: Main checks after push and during pull requests
+on:
+  push:
+    branches: [ 'main' ]
+  pull_request:
+    branches: [ 'main' ]
+jobs:
+  build:
+    strategy:
+      matrix:
+        java-version: [ 11, 17 ]
+    name: Build on ${{ matrix.runs-on }} with jdk ${{ matrix.java-version }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up JDK ${{ matrix.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: temurin
+
+      - name: Build with Gradle
+        run: make build
+
+      - name: Run unit tests
+        run: make test
+
+      - name: Run integration tests
+        run: make integration_test
