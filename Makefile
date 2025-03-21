@@ -27,7 +27,10 @@ checkstyle:
 	./gradlew checkstyleMain checkstyleTest checkstyleIntegrationTest
 
 build:
-	./gradlew build distTar -x test -x integrationTest
+	./gradlew build shadowJar -x test -x integrationTest
+
+build_rsm_jar:
+	./gradlew rsmShadowJar -x test -x integrationTest
 
 test: build
 	./gradlew test
@@ -36,7 +39,7 @@ integration_test: build
 	./gradlew integrationTest
 
 .PHONY: docker_image
-docker_image: build
+docker_image: build build_rsm_jar
 	docker build . \
 		-f docker/Dockerfile \
 		--build-arg _VERSION=$(VERSION) \

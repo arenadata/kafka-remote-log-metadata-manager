@@ -55,7 +55,7 @@ services:
       KAFKA_RLMM_CONFIG_METADATA_STORAGE_ZOOKEEPER_HOST: "zookeeper:2181"
       KAFKA_RLMM_CONFIG_METADATA_STORAGE_ZOOKEEPER_ROOT: "/kafka/remote-metadata"
       # Remote storage manager
-      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_PATH: "/tiered-storage-for-apache-kafka/fs/*"
+      KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_PATH: "/tiered-storage-for-apache-kafka/*"
       KAFKA_REMOTE_LOG_STORAGE_MANAGER_CLASS_NAME: "io.aiven.kafka.tieredstorage.RemoteStorageManager"
       KAFKA_RSM_CONFIG_CHUNK_SIZE: 4194304 # 4 MiB
       KAFKA_RSM_CONFIG_FETCH_CHUNK_CACHE_CLASS: "io.aiven.kafka.tieredstorage.fetch.cache.DiskChunkCache"
