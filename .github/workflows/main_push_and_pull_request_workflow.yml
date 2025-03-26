@@ -23,6 +23,10 @@ jobs:
           java-version: ${{ matrix.java-version }}
           distribution: temurin
 
+      - name: Remove default github maven configuration
+        # see https://github.com/mark-vieira/gradle-maven-settings-plugin/issues/15#issuecomment-688674390
+        run: rm ~/.m2/settings.xml
+
       - name: Build with Gradle
         run: make build
 
@@ -31,3 +35,15 @@ jobs:
 
       - name: Run integration tests
         run: make integration_test
+
+  docker_image:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Docker image
+        run: make docker_image
