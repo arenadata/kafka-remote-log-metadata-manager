@@ -13,9 +13,33 @@
  */
 
 plugins {
-    id "java-library"
-    id "distribution"
-    id "com.diffplug.spotless" version "6.25.0"
+    id 'java-library'
+    id 'maven-publish'
+    id 'com.diffplug.spotless' version '6.25.0'
+    id 'com.gradleup.shadow' version '8.3.5'
+    id 'io.github.rmanibus.maven-settings' version '0.8'
+    id 'me.qoomon.git-versioning' version '6.4.4'
+}
+
+gitVersioning.apply {
+    refs {
+        considerTagsOnBranches = true
+
+        branch('release/.+') {
+            describeTagFirstParent = false
+            version ='${describe.tag.version.major}.${describe.tag.version.minor}.${describe.tag.version.patch.next}-SNAPSHOT'
+        }
+
+        branch('main') {
+            describeTagFirstParent = false
+            updateGradleProperties = true
+            version = '${describe.tag.version.major}.${describe.tag.version.minor.next}.0-SNAPSHOT'
+        }
+
+        tag('v(?<version>.*)') {
+            version = '${ref.version}'
+        }
+    }
 }
 
 allprojects {
@@ -25,9 +49,6 @@ allprojects {
         }
         mavenCentral()
     }
-
-    // https://docs.gradle.org/current/userguide/distribution_plugin.html
-    apply plugin: "distribution"
 
     apply plugin: "base"
 
@@ -49,15 +70,6 @@ allprojects {
         zookeeperVersion = "3.8.3"
 
         curatorVersion = "5.5.0"
-    }
-
-    tasks.distTar {
-        compression = Compression.GZIP
-        duplicatesStrategy DuplicatesStrategy.EXCLUDE
-    }
-
-    tasks.distZip {
-        duplicatesStrategy DuplicatesStrategy.EXCLUDE
     }
 }
 
@@ -82,6 +94,8 @@ subprojects {
     apply plugin: "idea"
 
     apply plugin: "com.diffplug.spotless"
+
+    apply plugin: "com.gradleup.shadow"
 
     dependencies {
         compileOnly "org.apache.kafka:kafka-clients:$kafkaVersion"
@@ -119,16 +133,6 @@ subprojects {
         options.addStringOption('Xdoclint:all,-missing', '-quiet')
     }
 
-    distributions {
-        main {
-            contents {
-                from jar
-                from sourcesJar
-                from configurations.runtimeClasspath
-            }
-        }
-    }
-
     spotless {
         java {
             importOrder('javax', 'java', 'org.apache.kafka', 'io.aiven', 'io.arenadata', '', '\\#')
@@ -150,13 +154,18 @@ subprojects {
         }
     }
 
+    shadowJar {
+        duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+        mergeServiceFiles()
+    }
+
     tasks.register('integrationTest', Test) {
         description = 'Runs the integration tests.'
         group = 'verification'
         testClassesDirs = sourceSets.integrationTest.output.classesDirs
         classpath = sourceSets.integrationTest.runtimeClasspath
 
-        shouldRunAfter test, distTar
+        shouldRunAfter test
 
         useJUnitPlatform()
 
@@ -181,32 +190,58 @@ subprojects {
     }
 }
 
-dependencies {
-    // needed to run demo because Kafka has no default RemoteLogStorageManager implementation
-    runtimeOnly "io.aiven:tiered-storage-for-apache-kafka-core:0.0.1-SNAPSHOT"
-    runtimeOnly "io.aiven:tiered-storage-for-apache-kafka-storage-filesystem:0.0.1-SNAPSHOT"
+def getPublishingProperty(publishProperty) {
+    return version.endsWith('SNAPSHOT')
+            ? project.findProperty("snapshot${publishProperty}")
+            : project.findProperty("release${publishProperty}")
 }
 
-distributions {
-    main {
-        contents {
-            from(project(":core").jar)
-            from(project(":core").configurations.runtimeClasspath)
-            from(project(":metadata-storage:core").jar)
-            from(project(":metadata-storage:core").configurations.runtimeClasspath)
-            from(project(":metadata-storage:zookeeper").jar)
-            from(project(":metadata-storage:zookeeper").configurations.runtimeClasspath)
+publishing {
+    repositories {
+        afterEvaluate {
+            maven {
+                name = getPublishingProperty('ArtifactoryId')
+                url = getPublishingProperty('ArtifactoryUrl')
+            }
         }
     }
 
-    tieredStorage {
-        distributionBaseName = "aiven-local-storage-backend"
-        contents {
-            from(project.configurations.runtimeClasspath)
+    publications {
+        fatJar(MavenPublication) {
+            from components.shadow
+
+            afterEvaluate {
+                groupId = "io.arenadata"
+                artifactId = "kafka-remote-log-metadata-manager"
+            }
         }
     }
 }
 
-tasks.named("tieredStorageDistTar") {
-    compression = Compression.GZIP
+shadowJar {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    mergeServiceFiles()
+
+    subprojects.each { subproject ->
+        from subproject.tasks.named("shadowJar").map { it.archiveFile.get().asFile }
+    }
+
+    dependsOn jar
+}
+
+tasks.register('rsmShadowJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    group = "shadow"
+
+    archiveFileName = "aiven-remote-storage-manager.jar"
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    mergeServiceFiles()
+
+    exclude("META-INF/*.SF")
+    exclude("META-INF/*.DSA")
+    exclude("META-INF/*.RSA")
+
+    from project.configurations.detachedConfiguration(
+            dependencies.create('io.aiven:tiered-storage-for-apache-kafka-core:0.0.1-SNAPSHOT'),
+            dependencies.create('io.aiven:tiered-storage-for-apache-kafka-storage-filesystem:0.0.1-SNAPSHOT')
+    )
 }
